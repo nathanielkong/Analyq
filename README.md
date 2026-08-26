@@ -15,8 +15,9 @@ We are currently establishing the foundation:
 - Repository structure
 - Development environment plan
 - Basic documentation
+- Initial FastAPI backend health check
 
-No frontend, backend, database, ML, RAG, or AI assistant implementation has been added yet.
+No frontend, database, ML, RAG, or AI assistant implementation has been added yet.
 
 ## MVP Goal
 
