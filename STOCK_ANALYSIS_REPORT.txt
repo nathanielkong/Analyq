@@ -1,0 +1,510 @@
+AI STOCK INTELLIGENCE PLATFORM
+CURRENT STOCK ANALYSIS REPORT
+
+Purpose
+=======
+
+This document explains how the AI Stock Intelligence Platform currently
+analyses a stock. It describes the data source, processing steps, statistical
+calculations, classification rules, API flow, and current limitations.
+
+The current analysis is a deterministic, rule-based historical price analysis.
+It is not a machine-learning prediction, an LLM opinion, financial advice, or a
+guarantee of future performance.
+
+
+1. Current System Overview
+==========================
+
+The application currently uses market-data providers for separate jobs:
+
+1. Alpaca supplies the latest available stock quote shown in the frontend.
+2. Alpaca supplies adjusted daily historical bars used by the price analysis.
+3. Alpha Vantage remains available for symbol search and future news features.
+
+Keeping these jobs separate allows the application to use each provider for the
+data it handles well. The analysis also records its provider so that users and
+future services know where the underlying information came from.
+
+The current request flow is:
+
+User selects a stock
+    -> React frontend sends requests
+    -> FastAPI stock route receives the analysis request
+    -> Stock analysis service requests historical data
+    -> Alpaca client downloads and parses adjusted daily bars
+    -> Analysis service calculates statistics
+    -> FastAPI validates and returns structured JSON
+    -> React displays and saves the result in chat history
+
+
+2. Historical Data Request
+==========================
+
+The frontend requests an analysis using an endpoint similar to:
+
+GET /stocks/NVDA/analysis
+    ?provider=alpaca
+    &timeframe=1Day
+    &mode=historical
+    &limit=100
+
+The important request values are:
+
+symbol
+    The stock ticker, such as NVDA, AMD, DIS, or BRK.B. The backend removes
+    surrounding spaces, converts the symbol to uppercase, validates its pattern,
+    and maps a class separator such as BRK-B to Alpaca's BRK.B format.
+
+provider
+    The historical data provider. The adjusted historical endpoint currently
+    uses Alpaca.
+
+timeframe
+    The size of each historical bar. It is currently fixed to one day.
+
+mode
+    The analysis mode. It is called historical because a 100-bar window is not
+    long enough to claim that this is a complete long-term investment analysis.
+
+limit
+    The number of daily bars requested. The frontend currently requests 100.
+
+One hundred trading days represents approximately four to five calendar months,
+depending on weekends and market holidays.
+
+
+3. Data Collected from Alpaca
+==============================
+
+The Alpaca client calls its single-symbol historical bars endpoint. It requests
+one-day bars with adjustment=all, which tells Alpaca to adjust for splits,
+dividends, and spin-offs. For every trading day, the provider returns:
+
+- Date
+- Opening price
+- Highest price
+- Lowest price
+- Closing price
+- Trading volume
+
+These values are commonly called an OHLCV bar:
+
+O = Open
+H = High
+L = Low
+C = Close
+V = Volume
+
+The client converts Alpaca's JSON values into typed Python values:
+
+- Prices become float values.
+- Volume becomes an integer.
+- The date remains an ISO-style date string.
+
+The request is sorted newest-first to retrieve the latest requested bars, then
+the client sorts the result from oldest to newest for analysis. The end date is
+the previous US-market calendar date, preventing an in-progress current-day bar
+from being treated as a completed daily close.
+
+Although the platform collects the complete OHLCV bar, the current statistical
+analysis uses only the daily closing prices. Open, high, low, and volume are
+available for future indicators but do not currently affect the trend or risk
+classification.
+
+
+4. Validation Before Analysis
+==============================
+
+The system validates data before calculating statistics. It checks that:
+
+- A stock symbol was provided.
+- Alpaca returned a valid JSON object and a non-empty bar list.
+- The provider returned a daily time series.
+- Dates are unique and ordered from oldest to newest.
+- Every price is positive and high is not below low.
+- Open and close are both within the day's high-low range.
+- Volume is non-negative.
+- Roughly the requested number of bars was received.
+- The newest bar is not stale.
+- No adjusted close-to-close move exceeds 35 percent without a warning.
+- At least two historical bars are available.
+- Every closing price is greater than zero.
+
+If validation fails, the service raises a specific error. FastAPI converts that
+error into an HTTP response, such as 404 for a missing symbol, 400 for data that
+cannot be analysed, 429 for provider rate limiting, or 502 when an external
+market-data provider returns unusable data.
+
+
+5. Statistics Calculated
+========================
+
+The analysis service extracts an ordered list of closing prices and calculates
+the following values.
+
+5.1 First and Latest Closing Price
+----------------------------------
+
+The first close is the oldest closing price in the selected period. The latest
+close is the newest closing price in that period.
+
+These values establish the beginning and end of the analysis window.
+
+
+5.2 Period Return
+-----------------
+
+Period return measures the percentage change between the first and latest close.
+
+Formula:
+
+period return = ((latest close / first close) - 1) * 100
+
+Example:
+
+first close  = 100
+latest close = 115
+
+period return = ((115 / 100) - 1) * 100
+              = 15 percent
+
+This means the price increased by 15 percent during the selected period. It does
+not include dividends, fees, taxes, or the effect of entering on a different day.
+
+
+5.3 Daily Returns
+-----------------
+
+A daily return measures the change from one closing price to the next.
+
+Formula:
+
+daily return = (current close / previous close) - 1
+
+For closing prices of 100, 105, and 102, the returns are:
+
+day 2 return = (105 / 100) - 1 = 0.05, or 5 percent
+day 3 return = (102 / 105) - 1 = approximately -2.86 percent
+
+Simple daily returns are useful for explanation. For volatility, the service now
+uses log returns:
+
+log return = natural logarithm(current close / previous close)
+
+Log returns are commonly used for volatility because consecutive log returns
+can be added consistently across time.
+
+
+5.4 Compound Average Daily Return
+---------------------------------
+
+The service calculates the constant daily compound rate that would connect the
+first close to the latest close over the observed number of return periods.
+
+Formula:
+
+compound average daily return =
+    ((latest close / first close) ^ (1 / number of return periods) - 1) * 100
+
+This gives the average daily price movement during the selected window. It does
+not mean the stock will produce that return on the next trading day.
+
+
+5.5 Annualized Volatility
+-------------------------
+
+Volatility measures how widely daily returns vary around their average. Greater
+variation produces greater volatility.
+
+Formula:
+
+annualized volatility = sample standard deviation of daily log returns
+                        * sqrt(252)
+                        * 100
+
+The value 252 is used because the US stock market normally has approximately
+252 trading days in a year. Multiplying by sqrt(252) converts observed daily
+volatility into an annualized estimate.
+
+Volatility measures the size and inconsistency of price movements. It does not
+tell us whether those movements are upward or downward, and it does not directly
+measure the quality of the company.
+
+The service requires at least 30 daily bars before reporting volatility. If the
+provider returns fewer bars, annualized_volatility_pct is null and risk_level is
+insufficient_data. This prevents a one-return sample from being displayed as
+zero volatility and incorrectly labelled low risk.
+
+
+5.6 Moving Averages
+-------------------
+
+The platform calculates two simple moving averages:
+
+- The 20-day average is the mean of the latest 20 closing prices.
+- The 50-day average is the mean of the latest 50 closing prices.
+
+If fewer than 20 or 50 bars are available, the corresponding moving average is
+returned as null because there is not enough data to calculate it properly.
+
+Moving averages smooth short-term price changes and help show the direction of
+the recent price trend.
+
+
+5.7 Maximum Drawdown
+--------------------
+
+Maximum drawdown measures the largest decline from a previous peak during the
+selected period.
+
+For each closing price, the service remembers the highest closing price seen so
+far and calculates:
+
+drawdown = (current close / previous peak) - 1
+
+Example:
+
+previous peak = 120
+later close   = 90
+
+drawdown = (90 / 120) - 1
+         = -0.25, or -25 percent
+
+The most negative drawdown found in the period becomes the maximum drawdown.
+This describes downside experienced during the selected period, but it does not
+predict the size of a future decline.
+
+
+6. Trend Classification
+========================
+
+The current trend result can be uptrend, downtrend, sideways, or
+insufficient_data. These words describe an observed price pattern and avoid
+sounding like a forecast.
+
+Trend requires at least 50 daily bars. A 0.5 percent tolerance band is used so a
+tiny move around an average does not immediately flip the label.
+
+Uptrend
+    latest close > 20-day average by more than 0.5 percent, and
+    20-day average > 50-day average by more than 0.5 percent
+
+Downtrend
+    latest close < 20-day average by more than 0.5 percent, and
+    20-day average < 50-day average by more than 0.5 percent
+
+Sideways
+    Any other arrangement of the latest close and moving averages.
+
+Insufficient data
+    Fewer than 50 daily bars were received.
+
+This logic treats a price above its short-term average, with the short-term
+average above the longer average, as evidence of upward price momentum. The
+opposite arrangement is treated as downward momentum.
+
+The previous fixed +/-2 percent return fallback has been removed because it did
+not scale with the analysis window or the stock's volatility. These moving-
+average rules remain manually selected and have not been learned by a model or
+validated as a profitable trading strategy.
+
+
+7. Risk Classification
+=======================
+
+Risk is currently classified using annualized volatility and maximum drawdown.
+
+If fewer than 30 daily bars are available, risk is insufficient_data. The system
+does not infer low risk from an inadequate sample.
+
+High risk
+    Volatility is at least 40 percent OR drawdown is -20 percent or worse.
+
+Medium risk
+    Volatility is at least 20 percent OR drawdown is -10 percent or worse.
+
+Low risk
+    Neither the medium-risk nor high-risk condition is met.
+
+The OR condition means that one severe risk measurement is enough to raise the
+risk category. A stock with moderate volatility but a very large drawdown can
+therefore still be classified as high risk.
+
+These thresholds are transparent and easy to explain, but they are initial
+engineering choices rather than industry-certified investment ratings. Every
+response warns that they have not yet been calibrated against a benchmark.
+
+
+8. Analysis Response
+====================
+
+FastAPI returns a structured response containing:
+
+- Analysis version, calculation time, and latest data timestamp
+- Symbol, provider, timeframe, and analysis mode
+- Whether corporate-action adjustments were applied
+- Number of bars used
+- Whether the volatility and trend samples are sufficient
+- Start and end dates
+- First and latest closing prices
+- Period return in percentage units (period_return_pct)
+- Compound average daily return in percentage units
+- Annualized volatility in percentage units, or null
+- 20-day and 50-day moving averages
+- Maximum drawdown
+- Trend classification
+- Risk classification
+- Short reasons explaining the result
+- Data-quality and methodology warnings
+
+Pydantic validates this response before it leaves the backend. This creates a
+clear contract between the Python backend and TypeScript frontend.
+
+
+9. Frontend and Chat History
+============================
+
+When the user submits a stock, React requests the latest quote and historical
+analysis at the same time.
+
+The application uses Promise.allSettled so that the two requests can succeed or
+fail independently. If historical analysis is temporarily unavailable, a valid
+Alpaca quote can still be displayed.
+
+The frontend displays the analysis statistics, as-of time, adjustment status,
+classifications, concrete reasons, and warnings beneath the latest quote. It
+also stores the quote and versioned analysis in the assistant message's
+PostgreSQL metadata. Reopening that chat restores the saved result without
+requesting the same market data again.
+
+
+10. What the Current Analysis Does Not Do
+=========================================
+
+The rule-based historical analysis does not yet use:
+
+- Revenue, profit, debt, cash flow, or valuation ratios
+- Earnings announcements
+- Macroeconomic information
+- Intraday prices
+- LLM-generated financial reasoning
+- Portfolio-specific risk
+
+A separate experimental direction baseline now uses adjusted OHLCV, volume,
+SPY comparison features, logistic regression, and news sentiment only when its
+historical coverage is complete. It does not change the meaning of the
+rule-based trend and risk labels described in this report.
+
+The uptrend or downtrend label therefore describes the historical price pattern,
+not whether the company is fundamentally good, whether it is fairly valued, or
+whether its price will rise tomorrow.
+
+
+11. Important Limitations
+=========================
+
+1. The analysis window is only 100 daily bars by default. That is too short for
+   a complete long-term investment assessment.
+
+2. Adjusted Alpaca bars reduce split, dividend, and spin-off distortions, but an
+   extreme-move warning still needs investigation when it appears.
+
+3. The trend and risk thresholds are manually chosen and require evaluation.
+
+4. Volatility is estimated from about 99 returns in the default window and can
+   change. The API includes a confidence warning.
+
+5. The system uses closing prices only, even though more OHLCV data is collected.
+
+6. Provider outages, delays, rate limits, and licensing restrictions can affect
+   data availability.
+
+7. A historical relationship does not guarantee future performance.
+
+
+12. Recommended Development Direction
+=====================================
+
+The analysis should grow incrementally:
+
+1. Add caching keyed by symbol, provider, date, and adjustment mode.
+2. Add selectable periods such as one month, six months, one year, and five years.
+3. Add benchmark comparison against an index such as the S&P 500.
+4. Calibrate risk scores and percentiles against a broad stock universe.
+5. Add volume, downside-risk, liquidity, and expanded drawdown measurements.
+6. Add company fundamentals for genuine long-term analysis.
+7. Add dated and sourced company news with sentiment evidence.
+8. Separate short-term trading analysis from long-term investment analysis.
+9. Backtest rule-based labels with walk-forward validation before introducing ML.
+10. Let an LLM explain retrieved and calculated evidence, but never invent data.
+
+
+Conclusion
+==========
+
+The current system provides a transparent foundation for stock analysis. It
+retrieves real daily market data, validates it, calculates understandable price
+and risk statistics, applies explicit trend and risk rules, and returns a typed
+response to the frontend.
+
+Its main strength is explainability: every displayed result can be traced to a
+specific input and formula. Its main limitation is scope: it currently measures
+historical price behavior and an experimental next-close baseline. Fundamentals
+and stronger multi-period evaluation are still required before the platform can
+claim useful directional forecasting.
+
+
+13. Direction Model Validation
+==============================
+
+Direction model version 1.1 predicts whether the next completed adjusted daily
+close will be above the current completed close. It is a probability classifier,
+not a price forecast or trading instruction.
+
+Validation preserves chronological order with TimeSeriesSplit. StandardScaler
+and logistic regression are fitted independently inside every training fold, so
+future validation observations cannot influence scaling or coefficients.
+
+The model is cross-checked against three simple alternatives:
+
+- Predict the majority class observed in the training fold.
+- Predict that tomorrow repeats today's direction.
+- Predict that the stock follows SPY's current direction.
+
+Reported diagnostics include accuracy, balanced accuracy, precision, recall,
+F1, ROC AUC, Brier score, log loss, confusion counts, probability calibration,
+fold-by-fold results, decisive-prediction coverage, and coefficient stability.
+
+The user-facing direction is forced to mixed unless all three provisional gates
+pass:
+
+1. Accuracy beats the strongest naive baseline by at least two percentage points.
+2. ROC AUC is at least 0.52.
+3. Brier score beats a fold-specific historical up-rate probability baseline.
+
+The first six-stock audit found weak and inconsistent signal. Stronger L2
+regularization (C=0.1) reduced probability overconfidence, but it did not prove
+that the model has durable predictive value. More symbols, longer history,
+separate untouched test periods, and transaction-cost-aware backtests are still
+required.
+
+Six-stock audit snapshot (run 2026-09-20, 250 requested daily bars):
+
+Symbol  Accuracy  Strongest baseline  Edge       ROC AUC  Brier / baseline
+NVDA     53.16%        54.21%          -1.05 pp   0.562    0.2540 / 0.2512
+AMD      48.95%        53.16%          -4.21 pp   0.488    0.2691 / 0.2509
+AAPL     53.68%        52.11%          +1.58 pp   0.544    0.2632 / 0.2491
+MSFT     48.42%        58.42%         -10.00 pp   0.454    0.2837 / 0.2525
+AMZN     52.11%        54.21%          -2.11 pp   0.502    0.2669 / 0.2522
+GOOGL    50.00%        53.16%          -3.16 pp   0.504    0.2630 / 0.2519
+
+None passed the validation gate. All six had a worse Brier score than the
+fold-specific historical up-rate baseline, so the model probabilities were not
+better calibrated than a simple prior. Version 1.1 therefore reports `no_edge`
+and forces the user-facing lean to `mixed` for these results.
+
+The version 1.0 six-stock average Brier score was 0.2958. Increasing L2
+regularization by reducing C from 1.0 to 0.1 lowered it to 0.2667 and changed
+average accuracy from 50.70% to 51.05%. This is a useful calibration improvement,
+but it is not evidence of a profitable or generalizable signal.

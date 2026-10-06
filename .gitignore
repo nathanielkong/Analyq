@@ -5,6 +5,7 @@
 .env
 .env.*
 !.env.example
+!.env.deploy.example
 
 # Logs
 *.log
@@ -47,4 +48,9 @@ coverage/
 # Local data and model artifacts
 data/
 models/
+!backend/app/models/
+!backend/app/models/**
 artifacts/
+backups/
+.last-deployed-sha
+images.tar.gz

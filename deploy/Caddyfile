@@ -1,0 +1,7 @@
+{$DOMAIN} {
+	# Private preview gate until per-account quotas and signup controls exist.
+	basic_auth {
+		{$ACCESS_USER} {$ACCESS_HASH}
+	}
+	reverse_proxy web:8080
+}

@@ -1,0 +1,38 @@
+# Add this file only on a host with a real domain pointing to it.
+services:
+  api:
+    environment:
+      AUTH_COOKIE_SECURE: 'true'
+      REQUIRE_AUTH: 'true'
+      BACKEND_CORS_ORIGINS: https://${HTTPS_DOMAIN:?Set HTTPS_DOMAIN to your domain}
+  gateway:
+    image: caddy:2-alpine@sha256:881bbc60f9986d5ab8e7cfd6cf7e4ef3c9c0439fef2429d035d065577882f028
+    environment:
+      DOMAIN: ${HTTPS_DOMAIN:?Set HTTPS_DOMAIN to your domain}
+      ACCESS_USER: ${PREVIEW_USER:?Set PREVIEW_USER for private hosting}
+      ACCESS_HASH: ${PREVIEW_PASSWORD_HASH:?Set PREVIEW_PASSWORD_HASH for private hosting}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:2019/config/']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+volumes:
+  caddy_data:
+  caddy_config:

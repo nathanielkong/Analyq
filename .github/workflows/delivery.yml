@@ -1,0 +1,105 @@
+name: Test, build and deliver
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy tested images to the configured VM
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: delivery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build backend test image
+        run: docker build --target test -t analyq-api:test backend
+      - name: Test production containers and backend suite with isolated PostgreSQL
+        run: python3 scripts/container_smoke.py --backend-tests
+      - name: Save the exact tested production images
+        run: docker save analyq-api:local analyq-web:local | gzip > images.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-images
+          path: images.tar.gz
+          retention-days: 1
+
+  publish:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      repository: ${{ steps.names.outputs.repository }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-images
+      - run: docker load -i images.tar.gz
+      - id: names
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "repository=${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Login to GitHub Container Registry
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Publish tested commit-tagged images
+        env:
+          REPOSITORY: ${{ steps.names.outputs.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          docker tag analyq-api:local "ghcr.io/$REPOSITORY-api:$COMMIT"
+          docker tag analyq-web:local "ghcr.io/$REPOSITORY-web:$COMMIT"
+          docker push "ghcr.io/$REPOSITORY-api:$COMMIT"
+          docker push "ghcr.io/$REPOSITORY-web:$COMMIT"
+
+  deploy:
+    needs: publish
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency: analyq-production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Deploy over verified SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          REPOSITORY: ${{ needs.publish.outputs.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/id_ed25519' EXIT
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" 'umask 077; mkdir -p ~/analyq/scripts ~/analyq/deploy'
+          scp -o BatchMode=yes compose.deploy.yml compose.https.yml "$DEPLOY_USER@$DEPLOY_HOST:analyq/"
+          scp -o BatchMode=yes deploy/Caddyfile "$DEPLOY_USER@$DEPLOY_HOST:analyq/deploy/Caddyfile"
+          scp -o BatchMode=yes scripts/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:analyq/scripts/deploy.sh"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "sh ~/analyq/scripts/deploy.sh '$REPOSITORY' '$COMMIT'"
