@@ -1,4 +1,5 @@
 import type { PeerComparison } from '../types/financialQuality'
+import { providerNotice } from '../data/providerNotice'
 
 const display = (value: number | null) =>
   value == null ? '-' : value.toFixed(2)
@@ -8,6 +9,17 @@ export function PeerComparisonTable({
 }: {
   comparison: PeerComparison
 }) {
+  if (comparison.rows.length === 0) {
+    return (
+      <section className="mt-5 border-t border-neutral-800 pt-4">
+        <h4 className="text-sm font-semibold">Financial comparison unavailable</h4>
+        <p className="mt-2 text-sm text-neutral-500">
+          Financial data could not be retrieved for these stocks. No valuation
+          ranking has been calculated; any available price comparison is shown above.
+        </p>
+      </section>
+    )
+  }
   return (
     <section className="mt-5 min-w-0 border-t border-neutral-800 pt-4">
       <h4 className="text-sm font-semibold">
@@ -74,7 +86,7 @@ export function PeerComparisonTable({
       <details className="mt-3 text-xs text-neutral-500">
         <summary className="cursor-pointer">Methods and data gaps</summary>
         <ul className="mt-2 list-disc space-y-2 pl-4">
-          {comparison.warnings.map((warning) => (
+          {[...new Set(comparison.warnings.map(providerNotice))].map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
         </ul>

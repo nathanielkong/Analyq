@@ -840,6 +840,9 @@ def _build_provider_message_error(message: str) -> MarketDataError:
     if any(marker in normalized_message for marker in rate_limit_markers):
         return MarketDataRateLimitError("Alpha Vantage rate limit reached.")
 
+    if "premium" in normalized_message:
+        return MarketDataError("This data is not available on the current provider plan.")
+
     api_key = settings.market_data_api_key
     safe_message = message.replace(api_key, "[redacted]") if api_key else message
     return MarketDataError(safe_message)

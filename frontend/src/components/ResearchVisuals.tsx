@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { providerNotice } from '../data/providerNotice'
 import { Activity, ChartNoAxesCombined, Newspaper, Scale } from 'lucide-react'
 import {
   Bar,
@@ -732,7 +733,7 @@ function FundamentalsView({
             Method and data limitations ({fundamentals.warnings.length})
           </summary>
           <ul className="mt-3 space-y-2 text-xs leading-5 text-amber-100/80">
-            {fundamentals.warnings.map((warning) => (
+            {[...new Set(fundamentals.warnings.map(providerNotice))].map((warning) => (
               <li key={warning}>{warning}</li>
             ))}
           </ul>

@@ -4,6 +4,7 @@ Run from backend: PYTHONPATH=.:tests .venv/bin/python tests/report_ui_server.py
 """
 
 from datetime import UTC, datetime, timedelta
+import os
 from threading import Lock
 from unittest.mock import patch
 
@@ -179,6 +180,26 @@ settings.auth_session_secret = (
 )
 settings.auth_cookie_secure = False
 settings.google_client_id = None
+
+# Explicitly opt-in, loopback-only fixture for degraded-data UI regression checks.
+if os.environ.get("ANALYQ_UI_DEGRADED") == "1":
+    from app.api.services.auth_services import get_current_user, get_optional_current_user
+    from app.clients.errors import MarketDataError
+    from app.models.user import User
+
+    with Session(engine, expire_on_commit=False) as session:
+        fixture_user = User(display_name="UI Test", username="ui_fixture", email_verified=False)
+        session.add(fixture_user)
+        session.commit()
+        session.refresh(fixture_user)
+    app.dependency_overrides[get_current_user] = lambda: fixture_user
+    app.dependency_overrides[get_optional_current_user] = lambda: fixture_user
+
+    def fundamentals(symbol):
+        raise MarketDataError("Thank you for using Alpha Vantage! This is a premium endpoint https://www.alphavantage.co/premium/")
+
+    def outlook(**kwargs):
+        raise MarketDataError("Thank you for using Alpha Vantage! This is a premium endpoint https://www.alphavantage.co/premium/")
 
 if __name__ == "__main__":
     with (

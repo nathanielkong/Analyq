@@ -17,6 +17,7 @@ import {
   UserRound,
   ArrowUpRight,
   FileText,
+  History,
   LogOut,
   MessageSquareText,
   Plus,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react'
 
 import { getAuthConfig, getCurrentUser, logout } from './api/auth'
+import { providerNotice } from './data/providerNotice'
 import {
   createChatSession,
   deleteChatSession,
@@ -1256,6 +1258,41 @@ function App() {
               </div>
             </header>
 
+            <details className="mx-4 mb-3 shrink-0 border-b border-[#d8d0c4] pb-2 lg:hidden">
+              <summary className="flex cursor-pointer items-center gap-2 py-2 text-sm">
+                <History size={16} aria-hidden="true" /> Recent research
+              </summary>
+              <nav aria-label="Saved research" className="max-h-52 overflow-y-auto">
+                <button
+                  type="button"
+                  disabled={quoteRequestState === 'loading'}
+                  className="flex w-full items-center gap-2 px-2 py-3 text-left text-sm disabled:opacity-50"
+                  onClick={(event) => {
+                    handleNewChat()
+                    event.currentTarget.closest('details')?.removeAttribute('open')
+                  }}
+                ><Plus size={16} aria-hidden="true" /> New research</button>
+                {historyRequestState === 'loading' ? <p className="p-2 text-sm">Loading chats...</p> : null}
+                {historyRequestState !== 'loading' && chatSessions.length === 0 ? (
+                  <p className="p-2 text-sm text-neutral-500">{currentUser ? 'No chats yet' : 'Sign in to see saved research.'}</p>
+                ) : null}
+                {chatSessions.map((session) => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    disabled={quoteRequestState === 'loading'}
+                    aria-current={session.id === activeChatId ? 'page' : undefined}
+                    className="block w-full break-words rounded px-2 py-3 text-left text-sm hover:bg-[#e3dcd2] disabled:opacity-50"
+                    onClick={(event) => {
+                      void handleOpenChat(session)
+                      event.currentTarget.closest('details')?.removeAttribute('open')
+                    }}
+                  >{session.title}</button>
+                ))}
+                {historyErrorMessage ? <p role="status" className="p-2 text-sm">{historyErrorMessage}</p> : null}
+              </nav>
+            </details>
+
             {activeWorkspace === 'research' ? (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-5 sm:px-10">
                 {reports.length > 0 ? (
@@ -2149,21 +2186,21 @@ function App() {
                             {turn.analysisError ? (
                               <p className="mt-5 border-t border-amber-900 pt-4 text-sm text-amber-200">
                                 Quote loaded, but analysis is unavailable:{' '}
-                                {turn.analysisError}
+                                {providerNotice(turn.analysisError)}
                               </p>
                             ) : null}
 
                             {turn.outlookError ? (
                               <p className="mt-5 border-t border-amber-900 pt-4 text-sm text-amber-200">
                                 Quote loaded, but news/model research is
-                                unavailable: {turn.outlookError}
+                                unavailable: {providerNotice(turn.outlookError)}
                               </p>
                             ) : null}
 
                             {turn.fundamentalsError ? (
                               <p className="mt-5 border-t border-amber-900 pt-4 text-sm text-amber-200">
                                 Quote loaded, but fundamentals are unavailable:{' '}
-                                {turn.fundamentalsError}
+                                {providerNotice(turn.fundamentalsError)}
                               </p>
                             ) : null}
 

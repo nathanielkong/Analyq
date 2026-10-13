@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react'
 import type { ResearchReport } from '../types/assistant'
 import type { VisualTab } from './ResearchVisuals'
 import { DailyPatternsPanel } from './DailyPatternsPanel'
+import { providerNotice } from '../data/providerNotice'
 
 const reportSections = [
   'Market report',
@@ -391,18 +392,21 @@ export function SavedResearchReport({
           </Suspense>
         ) : null}
       </div>
-      {[data.analysis_error, data.fundamentals_error, data.outlook_error]
-        .filter(Boolean)
-        .map((error) => (
-          <p key={error} className="mt-4 text-sm text-amber-800">
-            {error}
-          </p>
-        ))}
+      {data.analysis_error || data.fundamentals_error || data.outlook_error ? (
+        <details className="mt-4 text-xs text-neutral-500">
+          <summary className="cursor-pointer">Data availability</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-4">
+            {data.analysis_error ? <li>Historical analysis is currently unavailable.</li> : null}
+            {data.fundamentals_error ? <li>Company financials are currently unavailable. Valuation and financial scores are not included.</li> : null}
+            {data.outlook_error ? <li>Some outlook or news data is currently unavailable. Available price analysis is still shown.</li> : null}
+          </ul>
+        </details>
+      ) : null}
       {financials?.warnings.length ? (
         <details className="mt-5 text-xs text-neutral-500">
           <summary className="cursor-pointer">Provider notes</summary>
           <ul className="mt-2 list-disc space-y-2 pl-4">
-            {financials.warnings.map((warning) => (
+            {[...new Set(financials.warnings.map(providerNotice))].map((warning) => (
               <li key={warning}>{warning}</li>
             ))}
           </ul>

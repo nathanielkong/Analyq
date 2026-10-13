@@ -11,6 +11,8 @@ import {
 import { getMarketWatch } from '../api/market'
 import type { MarketWatch } from '../types/market'
 
+import { providerNotice } from '../data/providerNotice'
+
 type RequestState = 'loading' | 'success' | 'error'
 type MarketWatchView = 'movers' | 'news'
 
@@ -329,9 +331,14 @@ export function MarketWatchPanel({
           </div>
 
           {marketWatch.warnings.length > 0 ? (
-            <p className="mt-3 text-xs leading-5 text-neutral-600">
-              {marketWatch.warnings.join(' ')}
-            </p>
+            <details className="mt-3 text-xs leading-5 text-neutral-500">
+              <summary className="cursor-pointer">Coverage and data availability</summary>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                {[...new Set(marketWatch.warnings.map(providerNotice))].map((notice) => (
+                  <li key={notice}>{notice}</li>
+                ))}
+              </ul>
+            </details>
           ) : null}
         </div>
       ) : null}

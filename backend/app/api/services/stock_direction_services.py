@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from math import log, log1p
 from statistics import fmean, pstdev, stdev
 from zoneinfo import ZoneInfo
@@ -37,7 +37,8 @@ from app.api.services.stock_history_services import (
     get_stock_history,
     normalize_stock_symbol,
 )
-from app.api.services.stock_news_services import get_stock_news
+from app.api.services.stock_news_services import build_stock_news_response, get_stock_news
+from app.clients.errors import MarketDataError
 
 
 MODEL_VERSION = "1.2.0"
@@ -108,11 +109,26 @@ def get_stock_outlook(
 ) -> StockOutlookResponse:
     normalized_symbol = normalize_stock_symbol(symbol)
     normalized_benchmark = normalize_stock_symbol(benchmark_symbol)
-    news = get_stock_news(
-        symbol=normalized_symbol,
-        days=news_days,
-        limit=news_limit,
-    )
+    try:
+        news = get_stock_news(
+            symbol=normalized_symbol,
+            days=news_days,
+            limit=news_limit,
+        )
+    except MarketDataError:
+        # Missing news must not disable the independent price-only baseline.
+        now = datetime.now(timezone.utc)
+        news = build_stock_news_response(
+            symbol=normalized_symbol,
+            articles=[],
+            period_start=now - timedelta(days=news_days),
+            period_end=now,
+            requested_limit=news_limit,
+            fetched_at=now,
+        )
+        news.warnings = [
+            "News data is unavailable. Direction models use price, volume, and benchmark data only."
+        ]
     stock_history = get_stock_history(
         symbol=normalized_symbol,
         provider="alpaca",

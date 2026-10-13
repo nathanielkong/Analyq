@@ -12,6 +12,8 @@ from app.api.services.stock_direction_services import (
 )
 from app.api.services.stock_news_services import build_stock_news_response
 from app.clients.alpha_vantage import AlphaVantageNewsArticle
+from app.clients.errors import MarketDataError, MarketDataRateLimitError
+from app.api.services import stock_direction_services as direction_service
 
 
 def make_history(symbol: str, benchmark: bool = False) -> StockHistoryResponse:
@@ -85,6 +87,38 @@ def make_news() -> StockNewsResponse:
         requested_limit=1000,
         fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
+
+
+@pytest.mark.parametrize("error", [MarketDataError("Premium endpoint"), MarketDataRateLimitError("Quota exceeded")])
+def test_outlook_runs_all_price_only_horizons_when_news_fails(monkeypatch, error):
+    def unavailable(**kwargs):
+        raise error
+
+    monkeypatch.setattr(direction_service, "get_stock_news", unavailable)
+    monkeypatch.setattr(
+        direction_service, "get_stock_history",
+        lambda **kwargs: make_history(kwargs["symbol"], kwargs["symbol"] == "SPY"),
+    )
+    outlook = direction_service.get_stock_outlook("TEST", "SPY", 220, 365, 1000)
+    assert outlook.news.summary.label == "insufficient_data"
+    assert outlook.news.summary.article_count == 0
+    assert "unavailable" in outlook.news.warnings[0]
+    assert not outlook.horizon_errors
+    models = [outlook.direction, *outlook.additional_horizons]
+    assert [model.horizon_sessions for model in models] == [1, 3, 5]
+    assert all(not model.news_features_used for model in models)
+    assert all(model.training_sample_count >= 60 for model in models)
+
+
+def test_outlook_still_surfaces_price_provider_failure(monkeypatch):
+    monkeypatch.setattr(direction_service, "get_stock_news", lambda **kwargs: make_news())
+
+    def unavailable(**kwargs):
+        raise MarketDataError("Price provider unavailable")
+
+    monkeypatch.setattr(direction_service, "get_stock_history", unavailable)
+    with pytest.raises(MarketDataError, match="Price provider unavailable"):
+        direction_service.get_stock_outlook("TEST", "SPY", 220, 365, 1000)
 
 
 @pytest.mark.parametrize("horizon", [1, 3, 5])
