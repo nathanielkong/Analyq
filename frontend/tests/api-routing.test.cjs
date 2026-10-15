@@ -51,6 +51,26 @@ test('development retains the local backend default', async () => {
   assert.equal(requests[0].url, 'http://localhost:8000/health')
 })
 
+test('guest tokens stay scoped to their chat and disappear with a new client', async () => {
+  const { api, requests } = await client({ DEV: false })
+  api.rememberGuestChat('first', 'temporary-token')
+  await api.apiGet('/chat/sessions/first/messages')
+  await api.apiPost('/assistant/chat', { session_id: 'first' })
+  await api.apiPost('/assistant/sessions/first/requests/request/cancel', {})
+  await api.apiDelete('/chat/sessions/first')
+  await api.apiGet('/chat/sessions/second/messages')
+  await api.apiPost('/auth/login', { username: 'test' })
+  for (const request of requests.slice(0, 4)) {
+    assert.equal(request.options.headers['X-Guest-Chat'], 'temporary-token')
+  }
+  for (const request of requests.slice(4)) {
+    assert.equal(request.options.headers['X-Guest-Chat'], undefined)
+  }
+  const fresh = await client({ DEV: false })
+  await fresh.api.apiGet('/chat/sessions/first/messages')
+  assert.equal(fresh.requests[0].options.headers['X-Guest-Chat'], undefined)
+})
+
 test('explicit proxy override is trimmed and does not duplicate slashes', async () => {
   const { api, requests } = await client({ DEV: false, VITE_API_BASE_URL: ' /api/ ' })
   await api.apiGet('/health')

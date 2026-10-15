@@ -1258,6 +1258,10 @@ function App() {
               </div>
             </header>
 
+            <p className="shrink-0 px-4 pb-3 text-center text-xs text-neutral-500 sm:px-8">
+              Hosted on a free server. After inactivity, the first request may take a minute or two while it wakes up. Please keep this page open.
+            </p>
+
             <details className="mx-4 mb-3 shrink-0 border-b border-[#d8d0c4] pb-2 lg:hidden">
               <summary className="flex cursor-pointer items-center gap-2 py-2 text-sm">
                 <History size={16} aria-hidden="true" /> Recent research
@@ -2472,6 +2476,12 @@ function App() {
                       )}
                     </div>
                   </div>
+                  {!currentUser && (
+                    <p className="mt-3 text-center text-xs text-neutral-500">
+                      You can research without an account. Guest chats won't be available after a refresh or closing this page.{' '}
+                      <button type="button" disabled={generating || stopping} onClick={() => setLoginOpen(true)} className="underline underline-offset-2 disabled:opacity-50">Sign in before starting a chat to save it.</button>
+                    </p>
+                  )}
                   <p className="mt-3 text-center text-[10px] text-[#b3a99d]">
                     Model output may contain errors. Please verify key financial
                     metrics before investing.

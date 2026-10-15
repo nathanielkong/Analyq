@@ -4,6 +4,7 @@ export type ChatSession = {
   title: string
   created_at: string
   updated_at: string
+  guest_token?: string | null
 }
 
 export type ChatMessageRole = 'user' | 'assistant' | 'system' | 'tool'

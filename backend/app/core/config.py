@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     auth_session_days: int = 7
     require_auth: bool = False
+    allow_guest_research: bool = True
     report_timezone: str = "Australia/Melbourne"
 
     @field_validator("report_timezone")

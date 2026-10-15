@@ -314,6 +314,8 @@ def test_reports_routes_persist_and_enforce_ownership(db, scenario):
     app.dependency_overrides[get_db_session] = lambda: db
     app.dependency_overrides[get_optional_current_user] = lambda: None
     http = TestClient(app)
+    from app.api.services.guest_access import create_guest_token
+    http.headers["X-Guest-Chat"] = create_guest_token(session.id)
     with patch.object(services, "GeminiClient", lambda: client):
         response = http.post(
             "/assistant/chat",
@@ -326,7 +328,7 @@ def test_reports_routes_persist_and_enforce_ownership(db, scenario):
     assert response.status_code == 200
     assert len(response.json()["reports"]) == 1
     assert http.get(f"/assistant/sessions/{session.id}/reports").status_code == 200
-    assert http.get(f"/assistant/sessions/{uuid4()}/reports").status_code == 404
+    assert http.get(f"/assistant/sessions/{uuid4()}/reports").status_code == 403
     assert (
         http.post(
             "/assistant/chat",

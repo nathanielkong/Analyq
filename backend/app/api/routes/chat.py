@@ -20,6 +20,7 @@ from app.api.services.chat_services import (
 )
 from app.db.session import get_db_session
 from app.models.user import User
+from app.api.services.guest_access import create_guest_token
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -35,7 +36,11 @@ def create_session(
     db: Session = Depends(get_db_session),
     user: User | None = Depends(get_optional_current_user),
 ) -> ChatSessionResponse:
-    return create_chat_session(db, session_data.title, user.id if user else None)
+    session = create_chat_session(db, session_data.title, user.id if user else None)
+    result = ChatSessionResponse.model_validate(session)
+    if user is None:
+        result.guest_token = create_guest_token(session.id)
+    return result
 
 
 @router.get("/sessions", response_model=list[ChatSessionResponse])
@@ -43,7 +48,7 @@ def get_sessions(
     db: Session = Depends(get_db_session),
     user: User | None = Depends(get_optional_current_user),
 ) -> list[ChatSessionResponse]:
-    return list_chat_sessions(db, user.id if user else None)
+    return list_chat_sessions(db, user.id) if user else []
 
 
 @router.post(

@@ -14,6 +14,7 @@ from app.api.routes import assistant as assistant_routes
 from app.clients.gemini import GeminiClientError
 from app.api.services import assistant_services, password_auth, research_report_services
 from app.api.services.chat_services import ChatSessionNotFoundError
+from app.api.services.guest_access import create_guest_token
 from app.api.services.generation_control import (
     GenerationCancelled,
     cancel_generation,
@@ -73,6 +74,7 @@ def test_chat_preserves_provider_status_and_does_not_save_failed_turn(
     monkeypatch.setattr(assistant_routes, "answer_research_chat", fail)
     response = auth_client.post(
         "/assistant/chat",
+        headers={"X-Guest-Chat": create_guest_token(session.id)},
         json={
             "session_id": str(session.id),
             "request_id": str(uuid4()),

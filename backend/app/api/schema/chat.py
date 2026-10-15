@@ -17,6 +17,7 @@ class ChatSessionResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    guest_token: str | None = None
 
 
 class ChatMessageCreate(BaseModel):

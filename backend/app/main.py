@@ -12,6 +12,7 @@ from app.api.routes.market import router as market_router
 from app.api.routes.stocks import router as stocks_router
 from app.core.config import settings
 from app.api.services.auth_services import get_current_user
+from app.api.services.guest_access import check_guest_access
 
 
 def create_app() -> FastAPI:
@@ -50,11 +51,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(auth_router)
-    protected = [Depends(get_current_user)] if settings.require_auth else []
+    protected = [Depends(get_current_user)] if settings.require_auth and not settings.allow_guest_research else []
     app.include_router(market_router, dependencies=protected)
     app.include_router(stocks_router, dependencies=protected)
-    app.include_router(chat_router, dependencies=protected)
-    app.include_router(assistant_router, dependencies=protected)
+    app.include_router(chat_router, dependencies=[*protected, Depends(check_guest_access)])
+    app.include_router(assistant_router, dependencies=[*protected, Depends(check_guest_access)])
 
     return app
 

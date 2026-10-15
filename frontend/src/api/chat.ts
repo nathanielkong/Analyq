@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost } from './client'
+import { apiDelete, apiGet, apiPost, rememberGuestChat } from './client'
 import type {
   ChatMessage,
   ChatSession,
@@ -10,13 +10,15 @@ export function getChatSessions(): Promise<ChatSession[]> {
   return apiGet<ChatSession[]>('/chat/sessions')
 }
 
-export function createChatSession(
+export async function createChatSession(
   payload: CreateChatSessionRequest,
 ): Promise<ChatSession> {
-  return apiPost<ChatSession, CreateChatSessionRequest>(
+  const session = await apiPost<ChatSession, CreateChatSessionRequest>(
     '/chat/sessions',
     payload,
   )
+  if (session.guest_token) rememberGuestChat(session.id, session.guest_token)
+  return session
 }
 
 export function getChatMessages(sessionId: string): Promise<ChatMessage[]> {

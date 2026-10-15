@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def protected_app(monkeypatch):
     monkeypatch.setattr(settings, "require_auth", True)
+    monkeypatch.setattr(settings, "allow_guest_research", False)
     monkeypatch.setattr(settings, "auth_session_secret", "test-only-" + "a" * 40)
     app = create_app()
     app.dependency_overrides[get_optional_current_user] = lambda: None
