@@ -72,13 +72,13 @@ def main():
             urllib.request.HTTPCookieProcessor(cookies)
         )
 
-        def request(path, body=None, method=None):
+        def request(path, body=None, method=None, headers=None):
             payload = json.dumps(body).encode() if body is not None else None
             req = urllib.request.Request(
                 origin + path,
                 data=payload,
                 method=method,
-                headers={"Content-Type": "application/json", "Origin": origin},
+                headers={"Content-Type": "application/json", "Origin": origin, **(headers or {})},
             )
             with browser.open(req, timeout=15) as response:
                 return response.status, response.read(), response.headers
@@ -99,9 +99,18 @@ def main():
             )
             # Sensitive files must never become served static assets.
             assert request("/.env")[1] == html
+            assert json.loads(request("/api/chat/sessions")[1]) == []
+            guest = json.loads(request("/api/chat/sessions", {"title": "Temporary guest test"})[1])
+            guest_path = f'/api/chat/sessions/{guest["id"]}/messages'
+            assert json.loads(request(guest_path, headers={"X-Guest-Chat": guest["guest_token"]})[1]) == []
             try:
-                request("/api/chat/sessions")
-                raise AssertionError("Guest access was not blocked")
+                request(guest_path)
+                raise AssertionError("Guest chat was accessible without its token")
+            except urllib.error.HTTPError as error:
+                assert error.code == 403
+            try:
+                request("/api/auth/me")
+                raise AssertionError("Guest accessed a signed-in account")
             except urllib.error.HTTPError as error:
                 assert error.code == 401
             _, _, headers = request(
